@@ -1,0 +1,6 @@
+tensorflow
+pennylane
+matplotlib
+numpy
+ipykernel
+scikit-learn
