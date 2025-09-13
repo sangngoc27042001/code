@@ -45,7 +45,8 @@ class HybridCNNQuantumModel(tf.keras.Model):
         self.quantum_weights = self.add_weight(
             name='quantum_weights',
             shape=(n_layers, self.n_input_qubits, self.n_readout_qubits),
-            initializer='random_normal',
+            # initializer='random_normal',
+            initializer='glorot_uniform',
             trainable=True,
             dtype=tf.float32
         )
@@ -70,7 +71,7 @@ class HybridCNNQuantumModel(tf.keras.Model):
         inputs = tf.cast(inputs, tf.float32)
         weights = tf.cast(weights, tf.float32)
 
-        # Apply Hadamard gates to all qubits
+        # Apply Hadamard gates to all qubits to create superposition
         for i in range(self.n_total_qubits):
             qml.Hadamard(wires=i)
     
@@ -87,10 +88,10 @@ class HybridCNNQuantumModel(tf.keras.Model):
                     target_qubit = self.n_input_qubits + j
                     qml.CRY(weights[layer, i, j], wires=[control_qubit, target_qubit])
             
-            # Add some entanglement between readout qubits
-            if layer < self.n_layers - 1:  # Don't add on last layer
-                for j in range(self.n_readout_qubits - 1):
-                    qml.CNOT(wires=[self.n_input_qubits + j, self.n_input_qubits + j + 1])
+            # # Add some entanglement between readout qubits
+            # if layer < self.n_layers - 1:  # Don't add on last layer
+            #     for j in range(self.n_readout_qubits - 1):
+            #         qml.CNOT(wires=[self.n_input_qubits + j, self.n_input_qubits + j + 1])
         
         # 3. Measure readout qubits (4-7)
         measurements = []
@@ -136,7 +137,8 @@ class HybridCNNQuantumModel(tf.keras.Model):
         quantum_outputs = tf.cast(quantum_outputs, tf.float32)
         
         # 3. Final classification: (batch, n_readout_qubits) -> (batch, n_classes)
-        predictions = self.classifier(quantum_outputs)
+        predictions = abrupt_sigmoid()(quantum_outputs)
+        # predictions = self.classifier(quantum_outputs)
         
         return predictions
     

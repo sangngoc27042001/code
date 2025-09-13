@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from src.utils.hybrid_cnn_quantum_model import create_hybrid_model
 from src.utils.preprocessing_cnn_model import test_cnn_extractor
+from src.utils.visualization import visualize_training_history
 import os
 
 def convert_labels_to_binary_array(labels, n_classes=10):
@@ -15,6 +16,15 @@ def convert_labels_to_binary_array(labels, n_classes=10):
         binary_array[i] = [int(bit) for bit in binary_str]
     
     return binary_array
+
+def convert_binary_array_to_labels(binary_array):
+    """Convert binary array representation back to integer labels."""
+    binary_array = np.array(binary_array).astype(int)
+    labels = []
+    for binary_str in binary_array:
+        label = int(''.join(map(str, binary_str)), 2)
+        labels.append(label)
+    return np.array(labels)
 
 def load_and_preprocess_mnist(total_size=1000, val_split=0.2):
     """Load and preprocess MNIST dataset with balanced smaller subset for train and validation only."""
@@ -92,37 +102,6 @@ def evaluate_model(model, x_test, y_test):
     
     return accuracy, predictions
 
-
-def visualize_training_history(history):
-    """Plot training history."""
-    print("\nPlotting training history...")
-    
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-    
-    # Plot loss
-    ax1.plot(history.history['loss'], label='Training Loss')
-    ax1.plot(history.history['val_loss'], label='Validation Loss')
-    ax1.set_title('Model Loss')
-    ax1.set_xlabel('Epoch')
-    ax1.set_ylabel('Loss')
-    ax1.legend()
-    
-    # Plot accuracy
-    ax2.plot(history.history['exact_match_accuracy'], label='Training Accuracy')
-    ax2.plot(history.history['val_exact_match_accuracy'], label='Validation Accuracy')
-    ax2.set_title('Model Accuracy')
-    ax2.set_xlabel('Epoch')
-    ax2.set_ylabel('Accuracy')
-    ax2.legend()
-    
-    plt.tight_layout()
-    os.makedirs('runs', exist_ok=True)
-    index = len(os.listdir('runs')) + 1
-    index = f"{index}".zfill(2)
-    plt.savefig(f'runs/training_history_{index}.png', dpi=150, bbox_inches='tight')
-    print("Training history saved as 'training_history.png'")
-
-
 def test_components():
     """Test individual components before full training."""
     print("="*60)
@@ -164,7 +143,7 @@ def main():
     
     # Create and train model
     print("\nStep 3: Creating Hybrid Model")
-    model = create_hybrid_model(n_classes=10, n_layers=1)
+    model = create_hybrid_model(n_classes=10, n_layers=3)
     
     # Build model
     _ = model(x_train[:1])
@@ -176,7 +155,7 @@ def main():
         x_train, y_train,
         validation_data=(x_val, y_val),
         epochs=100,
-        batch_size=16,
+        batch_size=32,
         verbose=1
     )
     
@@ -185,7 +164,13 @@ def main():
     
     # Visualize results
     print("\nStep 5: Visualizing Results")
-    visualize_training_history(history)
+    y_true_train = convert_binary_array_to_labels(y_train)
+    y_pred_train = tf.cast(tf.round(model.predict(x_train, verbose=0)),tf.int32)
+    y_pred_train = convert_binary_array_to_labels(y_pred_train)
+    y_true_val = convert_binary_array_to_labels(y_val)
+    y_pred_val = tf.cast(tf.round(model.predict(x_val, verbose=0)),tf.int32)
+    y_pred_val = convert_binary_array_to_labels(y_pred_val)
+    visualize_training_history(history, y_true_train, y_pred_train, y_true_val, y_pred_val)
     
     print("\n" + "="*60)
     print("TRAINING COMPLETED!")
