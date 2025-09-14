@@ -5,7 +5,8 @@ import math
 import matplotlib.pyplot as plt
 from src.utils.preprocessing_cnn_model import CNNFeatureExtractor
 from src.utils.loss_and_metric import my_custom_loss, exact_match_accuracy, abrupt_sigmoid
-
+from src.config import Setting
+from loguru import logger
 
 class HybridCNNQuantumModel(tf.keras.Model):
     """
@@ -38,10 +39,23 @@ class HybridCNNQuantumModel(tf.keras.Model):
         self.dev = qml.device("default.qubit", wires=self.n_total_qubits)
         
         # Create quantum node
-        self.quantum_node = qml.QNode(self._quantum_circuit, self.dev, interface="tf")
+        self.quantum_node = qml.QNode(
+            self._quantum_circuit, 
+            self.dev,
+            interface="tf"
+        )
         
         # Quantum weights for controlled rotations
         # Shape: (n_layers, n_input_qubits, n_readout_qubits)
+        self.quantum_weights_initial = self.add_weight(
+            name='quantum_weights',
+            shape=(self.n_input_qubits + self.n_readout_qubits,),
+            # initializer='random_normal',
+            initializer='glorot_uniform',
+            trainable=True,
+            dtype=tf.float32
+        )
+
         self.quantum_weights = self.add_weight(
             name='quantum_weights',
             shape=(n_layers, self.n_input_qubits, self.n_readout_qubits),
@@ -56,7 +70,7 @@ class HybridCNNQuantumModel(tf.keras.Model):
             self.n_readout_qubits, activation=abrupt_sigmoid(), dtype=tf.float32, name='classifier'
         )
     
-    def _quantum_circuit(self, inputs, weights):
+    def _quantum_circuit(self, inputs, quantum_weights, quantum_weights_initial):
         """
         Quantum circuit with angle embedding and controlled rotations.
         
@@ -69,15 +83,28 @@ class HybridCNNQuantumModel(tf.keras.Model):
         """
         # Ensure proper dtypes
         inputs = tf.cast(inputs, tf.float32)
-        weights = tf.cast(weights, tf.float32)
+        weights = tf.cast(quantum_weights, tf.float32)
+        weights_initial = tf.cast(quantum_weights_initial, tf.float32)
 
         # Apply Hadamard gates to all qubits to create superposition
         for i in range(self.n_total_qubits):
             qml.Hadamard(wires=i)
-    
-        # 1. Angle embedding on input qubits (0-3)
-        for i in range(self.n_input_qubits):
-            qml.RY(inputs[i], wires=i)
+
+         # 1. Angle embedding on input qubits (0-3)
+        if Setting.ENCODING_ALGO == "angle":
+            logger.info("Using angle encoding")
+            for i in range(self.n_input_qubits):
+                qml.RY(inputs[i], wires=i)
+        elif Setting.ENCODING_ALGO == "amplitute":
+            logger.info("Using amplitude encoding")
+            inputs_length = inputs.shape[0]
+            n_qubits_needed = math.ceil(math.log2(inputs_length))
+            wires = list(range(n_qubits_needed))
+            qml.AmplitudeEmbedding(features=inputs, wires=wires, normalize=True, pad_with=0.0)
+
+        # Apply Rotation weight qubit to spread out the state
+        for i in range(self.n_total_qubits):
+            qml.RY(weights_initial[i], wires=i)
         
         # 2. Parameterized quantum circuit with controlled rotations
         for layer in range(self.n_layers):
@@ -110,7 +137,7 @@ class HybridCNNQuantumModel(tf.keras.Model):
             inputs = [0.5, 0.3, 0.8, 0.2]
             weights = np.random.random((self.n_layers, self.n_input_qubits, self.n_readout_qubits))
             
-            return self._quantum_circuit(inputs, weights)
+            return self._quantum_circuit(inputs, weights, np.random.random(self.n_input_qubits + self.n_readout_qubits))
         
         fig, ax = qml.draw_mpl(circuit)()
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -127,9 +154,10 @@ class HybridCNNQuantumModel(tf.keras.Model):
         cnn_features = self.cnn_extractor(inputs)
         
         # 2. Quantum processing: (batch, 4) -> (batch, n_readout_qubits)
+        # Use tf.map_fn instead of tf.vectorized_map for better compatibility
         def process_sample(sample):
             """Process a single sample through quantum circuit."""
-            result = self.quantum_node(sample, self.quantum_weights)
+            result = self.quantum_node(sample, self.quantum_weights, self.quantum_weights_initial)
             return tf.stack(result, axis=0)
         
         # Process batch through quantum circuit
@@ -137,7 +165,12 @@ class HybridCNNQuantumModel(tf.keras.Model):
         quantum_outputs = tf.cast(quantum_outputs, tf.float32)
         
         # 3. Final classification: (batch, n_readout_qubits) -> (batch, n_classes)
-        predictions = abrupt_sigmoid()(quantum_outputs)
+        if Setting.FINAL_ACTIVATION_FUNCTION == "custom":
+            logger.info("Using custom abrupt sigmoid activation")
+            predictions = abrupt_sigmoid()(quantum_outputs)
+        elif Setting.FINAL_ACTIVATION_FUNCTION == "sigmoid":
+            logger.info("Using standard sigmoid activation")
+            predictions = tf.keras.activations.sigmoid(quantum_outputs)
         # predictions = self.classifier(quantum_outputs)
         
         return predictions
@@ -164,12 +197,12 @@ def create_hybrid_model(n_classes=10, n_layers=1):
         HybridCNNQuantumModel: Compiled hybrid model
     """
     model = HybridCNNQuantumModel(n_classes=n_classes, n_layers=n_layers)
-    
+        
     # Compile the model
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
         loss=my_custom_loss,
-        metrics=[exact_match_accuracy]
+        metrics=[exact_match_accuracy],
     )
     
     return model

@@ -1,10 +1,13 @@
 import tensorflow as tf
+from tensorflow.keras.callbacks import ModelCheckpoint
 import numpy as np
 import matplotlib.pyplot as plt
 from src.utils.hybrid_cnn_quantum_model import create_hybrid_model
 from src.utils.preprocessing_cnn_model import test_cnn_extractor
 from src.utils.visualization import visualize_training_history
+from src.config import Setting
 import os
+from loguru import logger
 
 def convert_labels_to_binary_array(labels, n_classes=10):
     """Convert integer labels to binary array representation."""
@@ -33,7 +36,12 @@ def load_and_preprocess_mnist(total_size=1000, val_split=0.2):
     print("Loading MNIST dataset...")
     
     # Load MNIST data
-    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+    if Setting.DATASET_CHOSEN == "mnist":
+        logger.info("Using MNIST dataset")
+        (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+    elif Setting.DATASET_CHOSEN == "fashion_mnist":
+        logger.info("Using Fashion MNIST dataset")
+        (x_train, y_train), (x_test, y_test) = tf.keras.datasets.fashion_mnist.load_data()
     
     # Create smaller balanced subset using stratified sampling
     print(f"Creating balanced subset: {total_size} total samples")
@@ -119,7 +127,7 @@ def test_components():
     return cnn_extractor, hybrid_model
 
 
-def main():
+def main(result_name="results"):
     """Main training pipeline."""
     print("="*60)
     print("HYBRID CNN-QUANTUM MODEL TRAINING")
@@ -135,7 +143,7 @@ def main():
     
     # Load data with balanced train/validation split
     print("\nStep 2: Loading Data")
-    (x_train, y_train), (x_val, y_val) = load_and_preprocess_mnist(total_size=1000, val_split=0.2)
+    (x_train, y_train), (x_val, y_val) = load_and_preprocess_mnist(total_size=5000, val_split=0.2)
     
     print(f"Final dataset sizes:")
     print(f"  Training: {len(x_train)}")
@@ -151,12 +159,20 @@ def main():
     
     # Train model
     print("\nStep 4: Training Model")
+    checkpoint = ModelCheckpoint(
+        filepath='my_model.keras', # where to save the model file
+        monitor="val_exact_match_accuracy",          # what metric to monitor
+        save_best_only=True,             # only keep the best
+        mode="max",                      # "max" since we want highest accuracy
+        verbose=1,
+    )
     history = model.fit(
         x_train, y_train,
         validation_data=(x_val, y_val),
-        epochs=100,
+        epochs=50,
         batch_size=32,
-        verbose=1
+        verbose=1,
+        callbacks=[checkpoint]
     )
     
     # Get final validation accuracy
@@ -170,7 +186,7 @@ def main():
     y_true_val = convert_binary_array_to_labels(y_val)
     y_pred_val = tf.cast(tf.round(model.predict(x_val, verbose=0)),tf.int32)
     y_pred_val = convert_binary_array_to_labels(y_pred_val)
-    visualize_training_history(history, y_true_train, y_pred_train, y_true_val, y_pred_val)
+    visualize_training_history(history, y_true_train, y_pred_train, y_true_val, y_pred_val, result_name=result_name)
     
     print("\n" + "="*60)
     print("TRAINING COMPLETED!")
@@ -181,4 +197,13 @@ def main():
 
 
 if __name__ == "__main__":
-    model, history, accuracy = main()
+    from itertools import product
+
+    encoding_algos = ["angle", "amplitute"]
+    final_activation_functions = ["custom", "sigmoid"]
+    datasets = ["mnist", "fashion_mnist"]
+
+    combinations = list(product(encoding_algos, final_activation_functions, datasets))
+    for combination in combinations[1:4]:
+        Setting.ENCODING_ALGO, Setting.FINAL_ACTIVATION_FUNCTION, Setting.DATASET_CHOSEN = combination
+        model, history, accuracy = main(f"results_{Setting.ENCODING_ALGO}_{Setting.FINAL_ACTIVATION_FUNCTION}_{Setting.DATASET_CHOSEN}")

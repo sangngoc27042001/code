@@ -3,7 +3,7 @@ import json
 import matplotlib.pyplot as plt
 import numpy as np
 
-def visualize_training_history(history, y_true_train, y_pred_train, y_true_val, y_pred_val):
+def visualize_training_history(history, y_true_train, y_pred_train, y_true_val, y_pred_val, result_name="results"):
     """
     Plots training history, saves plots as PDFs, and stores max accuracy in a JSON file.
     
@@ -17,10 +17,10 @@ def visualize_training_history(history, y_true_train, y_pred_train, y_true_val, 
     print("\nPlotting training history and saving results...")
     
     # --- Create a unique run folder ---
-    runs_dir = 'runs'
+    runs_dir = "runs"
     os.makedirs(runs_dir, exist_ok=True)
     index = len(os.listdir(runs_dir)) + 1
-    folder_name = f"run_{index:02d}"
+    folder_name = f"{result_name}_{index:02d}"
     run_path = os.path.join(runs_dir, folder_name)
     os.makedirs(run_path, exist_ok=True)
     
@@ -84,5 +84,9 @@ def visualize_training_history(history, y_true_train, y_pred_train, y_true_val, 
     json_path = os.path.join(run_path, 'max_accuracy.json')
     with open(json_path, 'w') as f:
         json.dump(accuracy_data, f, indent=4)
+    
+    json_path = os.path.join(run_path, 'history.json')
+    with open(json_path, 'w') as f:
+        json.dump(history.history, f, indent=4)
         
     print(f"Results saved in folder: '{run_path}'")
