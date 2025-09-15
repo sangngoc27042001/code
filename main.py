@@ -42,6 +42,14 @@ def load_and_preprocess_mnist(total_size=1000, val_split=0.2):
     elif Setting.DATASET_CHOSEN == "fashion_mnist":
         logger.info("Using Fashion MNIST dataset")
         (x_train, y_train), (x_test, y_test) = tf.keras.datasets.fashion_mnist.load_data()
+    elif Setting.DATASET_CHOSEN == "kmnist":
+        logger.info("Using KMNIST dataset")
+        x_train_path = "datasets/kmnist/kmnist-train-imgs.npz"
+        y_train_path = "datasets/kmnist/kmnist-train-labels.npz"
+        (x_train, y_train) = np.load(x_train_path)['arr_0'], np.load(y_train_path)['arr_0']
+    else:
+        raise ValueError(f"Unsupported dataset: {Setting.DATASET_CHOSEN}")
+        
     
     # Create smaller balanced subset using stratified sampling
     print(f"Creating balanced subset: {total_size} total samples")
@@ -201,9 +209,11 @@ if __name__ == "__main__":
 
     encoding_algos = ["angle", "amplitute"]
     final_activation_functions = ["custom", "sigmoid"]
-    datasets = ["mnist", "fashion_mnist"]
+    datasets = ["mnist", "fashion_mnist", "kmnist"]
 
     combinations = list(product(encoding_algos, final_activation_functions, datasets))
-    for combination in combinations[1:4]:
+    for i, combination in enumerate(combinations):
+        if i not in [2, 5]:
+            continue
         Setting.ENCODING_ALGO, Setting.FINAL_ACTIVATION_FUNCTION, Setting.DATASET_CHOSEN = combination
         model, history, accuracy = main(f"results_{Setting.ENCODING_ALGO}_{Setting.FINAL_ACTIVATION_FUNCTION}_{Setting.DATASET_CHOSEN}")
